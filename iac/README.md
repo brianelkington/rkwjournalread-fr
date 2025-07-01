@@ -1,72 +1,63 @@
-# Azure Journal Reader Infrastructure
+# Azure Custom Vision Infrastructure as Code
 
-This Terraform configuration provisions Azure resources for the Journal Reader application.
+This directory contains Terraform code to provision Azure Custom Vision resources for both training and prediction, with secure storage of credentials in Azure Key Vault.
 
-## Resources Created
+## Resources Provisioned
 
-- **Resource Group**: `rg-rkwjournalreader`
-- **Storage Account**: `sarkwreader1`
-  - **Blob Container**: `rkw-text-out`
-- **User Assigned Managed Identity**: `id-rkw`
-- **Azure Cognitive Services (Computer Vision)**: `ai-rkw-vision`
-- **Azure Key Vault**: `kv-rkw`
-  - Stores Cognitive Services API keys and endpoint as secrets
+- **Azure Cognitive Services (Custom Vision)**
+  - Training resource (`ai-rkw-vision-training`)
+  - Prediction resource (`ai-rkw-vision-prediction`)
+- **Azure Key Vault Secrets**
+  - Stores API keys and endpoints for both resources
 
-## Prerequisites
+## Resource Overview
 
-- [Terraform](https://www.terraform.io/downloads.html) >= 1.0
-- Azure subscription and credentials (e.g., via `az login`)
+| Resource Type                | Name/Key                         | Purpose                                 |
+|------------------------------|----------------------------------|-----------------------------------------|
+| azurerm_cognitive_account    | rkw-training                     | Custom Vision Training instance         |
+| azurerm_cognitive_account    | rkw-prediction                   | Custom Vision Prediction instance       |
+| azurerm_key_vault_secret     | api-key-1-training               | Training primary API key                |
+| azurerm_key_vault_secret     | api-key-2-training               | Training secondary API key              |
+| azurerm_key_vault_secret     | api-endpoint-training            | Training endpoint URL                   |
+| azurerm_key_vault_secret     | api-key-1-prediction             | Prediction primary API key              |
+| azurerm_key_vault_secret     | api-key-2-prediction             | Prediction secondary API key            |
+| azurerm_key_vault_secret     | api-endpoint-prediction          | Prediction endpoint URL                 |
 
 ## Usage
 
-1. **Navigate to the `iac/` directory:**
-   ```sh
-   cd iac
-   ```
+1. **Prerequisites**
+   - Azure subscription
+   - Terraform installed
+   - Existing Azure Resource Group and Key Vault
 
-2. **Set your Azure subscription ID in [`terraform.tfvars`](iac/terraform.tfvars`):**
-   ```hcl
-   subscription_id = "<your-subscription-id>"
-   ```
-
-3. **Initialize Terraform:**
+2. **Initialize Terraform**
    ```sh
    terraform init
    ```
 
-4. **Review the plan:**
+3. **Plan the Deployment**
    ```sh
    terraform plan
    ```
 
-5. **Apply the configuration:**
+4. **Apply the Configuration**
    ```sh
    terraform apply
    ```
 
+## Variables
+
+- The configuration expects the following resources to exist:
+  - `azurerm_resource_group.rkw`
+  - `azurerm_key_vault.rkw`
+  - `local.tags` for resource tagging
+
 ## Outputs
 
-- The Key Vault will contain:
-  - `API-KEY-1` and `API-KEY-2`: Cognitive Services API keys
-  - `ENDPOINT`: Cognitive Services endpoint
-
-## File Structure
-
-- [`main.tf`](iac/main.tf): Resource group, managed identity
-- [`storage.tf`](iac/storage.tf): Storage account and blob container
-- [`cognitiveservice.tf`](iac/cognitiveservice.tf): Cognitive Services resource
-- [`keyvault.tf`](iac/keyvault.tf): Key Vault and secrets
-- [`providers.tf`](iac/providers.tf): Azure provider configuration
-- [`variables.tf`](iac/variables.tf): Input variables and tags
-- [`versions.tf`](iac/versions.tf): Provider version constraints
+- API keys and endpoints are stored as secrets in the specified Azure Key Vault.
 
 ## Notes
 
-- The storage account uses locally redundant storage (LRS).
-- The managed identity can be used for secure access to Azure resources.
-- Key Vault access policies are set for both the current user and the managed identity.
-
----
-
-**See also:**  
-- [Terraform Azurerm Provider Documentation](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs)
+- Both Cognitive Services accounts use the `S0` SKU.
+- Custom subdomain names are set for both training and prediction endpoints.
+- Follow [Azure Terraform best practices](https://learn.microsoft.com/en-us/azure/developer/terraform/best-practices) for
