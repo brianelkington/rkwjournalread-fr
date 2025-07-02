@@ -8,14 +8,14 @@ resource "azurerm_storage_account" "rkw" {
   tags = local.tags
 }
 
-# resource "azurerm_storage_container" "rkw_text" {
-#   name                  = "rkw-text-out"
-#   storage_account_id    = azurerm_storage_account.rkw.id
-#   container_access_type = "blob"
-# }
+resource "azurerm_storage_container" "rkw_text" {
+  name                  = "rkw-text-out"
+  storage_account_id    = azurerm_storage_account.rkw.id
+  container_access_type = "blob"
+}
 
-# resource "azurerm_storage_container" "rkw_images" {
-#   name                  = "rkw-images"
-#   storage_account_id    = azurerm_storage_account.rkw.id
-#   container_access_type = "blob"
-# }
+resource "azurerm_storage_container" "rkw_images" {
+  name                  = "rkw-journalpages"
+  storage_account_id    = azurerm_storage_account.rkw.id
+  container_access_type = "blob"
+}
