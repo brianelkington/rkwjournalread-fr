@@ -1,5 +1,5 @@
 resource "azurerm_resource_group" "rkw" {
-  name     = "rg-rkwjournalreader-customvision"
+  name     = "rg-rkwjournalreader-fr"
   location = var.location
 
   tags = merge(local.tags, { createdOn = formatdate("YYYY-MM-DD HH:mm:ss ZZZ", timestamp()) })

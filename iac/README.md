@@ -1,63 +1,63 @@
-# Azure Custom Vision Infrastructure as Code
+# Azure Form Recognizer Infrastructure as Code
 
-This directory contains Terraform code to provision Azure Custom Vision resources for both training and prediction, with secure storage of credentials in Azure Key Vault.
+This directory contains Terraform code to provision Azure resources for the RKW Journal Reader project, including Form Recognizer, Key Vault, Storage, and supporting infrastructure.
 
 ## Resources Provisioned
 
-- **Azure Cognitive Services (Custom Vision)**
-  - Training resource (`ai-rkw-vision-training`)
-  - Prediction resource (`ai-rkw-vision-prediction`)
-- **Azure Key Vault Secrets**
-  - Stores API keys and endpoints for both resources
-
-## Resource Overview
-
-| Resource Type                | Name/Key                         | Purpose                                 |
-|------------------------------|----------------------------------|-----------------------------------------|
-| azurerm_cognitive_account    | rkw-training                     | Custom Vision Training instance         |
-| azurerm_cognitive_account    | rkw-prediction                   | Custom Vision Prediction instance       |
-| azurerm_key_vault_secret     | api-key-1-training               | Training primary API key                |
-| azurerm_key_vault_secret     | api-key-2-training               | Training secondary API key              |
-| azurerm_key_vault_secret     | api-endpoint-training            | Training endpoint URL                   |
-| azurerm_key_vault_secret     | api-key-1-prediction             | Prediction primary API key              |
-| azurerm_key_vault_secret     | api-key-2-prediction             | Prediction secondary API key            |
-| azurerm_key_vault_secret     | api-endpoint-prediction          | Prediction endpoint URL                 |
+| Resource Type                      | Terraform Name                        | Purpose                                 |
+|-------------------------------------|---------------------------------------|-----------------------------------------|
+| azurerm_resource_group              | azurerm_resource_group.rkw            | Resource group for all resources        |
+| azurerm_storage_account             | azurerm_storage_account.rkw           | Storage for images and outputs          |
+| azurerm_key_vault                   | azurerm_key_vault.rkw                 | Secure storage for secrets              |
+| azurerm_cognitive_account           | azurerm_cognitive_account.rkw-fr      | Azure Form Recognizer resource          |
+| azurerm_key_vault_secret            | azurerm_key_vault_secret.api_key_1_fr | Primary API key for Form Recognizer     |
+| azurerm_key_vault_secret            | azurerm_key_vault_secret.api_key_2_fr | Secondary API key for Form Recognizer   |
+| azurerm_key_vault_secret            | azurerm_key_vault_secret.endpoint_fr  | Endpoint URL for Form Recognizer        |
 
 ## Usage
 
 1. **Prerequisites**
    - Azure subscription
    - Terraform installed
-   - Existing Azure Resource Group and Key Vault
+   - Sufficient permissions to create resources
 
-2. **Initialize Terraform**
+2. **Configure Variables**
+
+   Edit `terraform.tfvars` or set the following variables:
+   - `subscription_id` (required)
+   - `location` (default: `eastus`)
+
+3. **Initialize Terraform**
+
    ```sh
    terraform init
    ```
 
-3. **Plan the Deployment**
+4. **Plan the Deployment**
+
    ```sh
    terraform plan
    ```
 
-4. **Apply the Configuration**
+5. **Apply the Configuration**
+
    ```sh
    terraform apply
    ```
 
 ## Variables
 
-- The configuration expects the following resources to exist:
-  - `azurerm_resource_group.rkw`
-  - `azurerm_key_vault.rkw`
-  - `local.tags` for resource tagging
+See [`variables.tf`](iac/variables.tf) for all configurable variables.
 
 ## Outputs
 
-- API keys and endpoints are stored as secrets in the specified Azure Key Vault.
+- API keys and endpoint for Form Recognizer are stored as secrets in Azure Key Vault:
+  - `api-key-1-fr`
+  - `api-key-2-fr`
+  - `api-endpoint-fr`
 
 ## Notes
 
-- Both Cognitive Services accounts use the `S0` SKU.
-- Custom subdomain names are set for both training and prediction endpoints.
-- Follow [Azure Terraform best practices](https://learn.microsoft.com/en-us/azure/developer/terraform/best-practices) for
+- Resource tags are set via the `local.tags` local variable.
+- Storage containers for images and text output are defined but commented out in [`storage.tf`](iac/storage.tf).
+- Follows [Azure Terraform best practices](https://learn.microsoft.com/en-us/azure/developer/terraform/best-practices)

@@ -1,7 +1,7 @@
 data "azurerm_client_config" "current" {}
 
 resource "azurerm_key_vault" "rkw" {
-  name                = "kv-rkw-customvision"
+  name                = "kv-rkw-fr"
   location            = azurerm_resource_group.rkw.location
   resource_group_name = azurerm_resource_group.rkw.name
 
