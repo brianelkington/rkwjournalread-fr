@@ -1,61 +1,54 @@
-# Program.cs — Journal Computer Vision Processor
+# RKW Journal Reader - Document Analysis
 
-This C# console application processes scanned journal images using Azure AI Vision and SkiaSharp. It supports batch OCR, captioning, and confidence aggregation, with flexible input and output options.
+This .NET console application processes scanned journal images using Azure AI Document Intelligence (Form Recognizer). It extracts text and word confidences, optionally annotates images, and aggregates results.
 
 ## Features
 
-- **Input**: Accepts a folder of JPEG images or a JSON file listing images and split flags.
-- **Image Splitting**: Optionally splits double-page scans into left/right pages.
-- **Azure AI Vision**: Uses Azure's `ImageAnalysisClient` for OCR, captioning, and dense captions.
-- **Confidence Aggregation**: Computes and reports average word confidence across all processed images.
-- **Output**:
-  - Per-page logs and an aggregator summary.
-  - Optionally saves annotated images with OCR results.
-- **Configurable**: Reads Azure endpoint/key from `appsettings.json`.
-- **Verbose Mode**: Extra details and word-level confidences with `--verbose`.
+- Processes images from a folder or a JSON list.
+- Uses Azure Form Recognizer (Document Intelligence) for OCR.
+- Supports splitting double-page scans.
+- Outputs recognized text, word confidences, and per-page logs.
+- Optionally saves annotated images with word bounding boxes.
+- Aggregates results and statistics.
 
 ## Usage
 
-```sh
-dotnet run -- [input-folder|input.json] [--save-images] [--verbose]
-```
+1. **Configure Azure Credentials**
 
-- `input-folder`: Directory containing `.jpg`/`.jpeg` images (default: `images`)
-- `input.json`: JSON file with an array of `{ "path": "...", "split": true/false }`
-- `--save-images`: Save annotated JPEGs with OCR overlays.
-- `--verbose`: Print detailed output, including confidences.
+   Edit `appsettings.json` with your Azure Form Recognizer endpoint and key:
+   ```json
+   {
+     "DocumentAnalysisEndpoint": "<your-endpoint>",
+     "DocumentAnalysisKey": "<your-key>",
+     "DocumentAnalysisModelId": "prebuilt-read"
+   }
+   ```
 
-## Key Classes & Methods
+2. **Run the Application**
 
-- **ImageEntry**: Represents an image and whether to split it.
-- **Main**: Parses arguments, loads config, builds image list, and orchestrates processing.
-- **ProcessImageFile**: Handles splitting and per-region processing.
-- **ProcessRegion**: Runs Azure Vision analysis, logs results, and aggregates confidences.
-- **LoadAndOrientImage**: Loads and orients images using EXIF data.
-- **AnnotateAndSave**: Draws OCR results on images and saves them.
-- **TeeTextWriter**: Writes output to multiple streams (console, file, aggregator).
+   ```sh
+   dotnet run -- [input-folder-or-json] [--save-images] [--verbose]
+   ```
 
-## Dependencies
+   - `input-folder-or-json`: Folder with `.jpg`/`.jpeg` images or a JSON file listing images.
+   - `--save-images`: Save annotated images with word bounding boxes (requires `--verbose`).
+   - `--verbose`: Print detailed output and confidences.
 
-- [Azure.AI.Vision.ImageAnalysis](https://learn.microsoft.com/azure/ai-services/computer-vision/)
-- [SkiaSharp](https://github.com/mono/SkiaSharp)
-- [Microsoft.Extensions.Configuration](https://learn.microsoft.com/dotnet/api/microsoft.extensions.configuration)
+3. **Output**
 
-## Configuration
+   - Results are saved in an `image_out` folder inside your input directory.
+   - Per-page logs: `<image>_L.out`, `<image>_R.out`, etc.
+   - Aggregated text: `aggregator.txt`
+   - Annotated images: `<image>_words.jpg` (if enabled)
 
-Create an `appsettings.json` file with your Azure Vision endpoint and key:
+## Requirements
 
-```json
-{
-  "AIServicesEndpoint": "https://<your-resource>.cognitiveservices.azure.com/",
-  "AIServicesKey": "<your-key>"
-}
-```
+- .NET 6 or later
+- Azure Form Recognizer resource and API key
+- SkiaSharp NuGet package
 
-## Output
+## Notes
 
-- Annotated images and logs are saved in an `image_out` subfolder.
-- Aggregated word confidence is reported at the end.
-
----
-**Note:** Requires Azure AI Vision resource and valid credentials.
+- Double-page scans are split automatically if `Split` is true in the JSON or by default for folder input.
+- Word confidences and bounding boxes are available in verbose mode.
+- See `Program.cs` for
