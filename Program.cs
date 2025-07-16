@@ -176,6 +176,12 @@ namespace read_journal_documentanalysis
                     ref totalWordConf,
                     ref totalWordCount,
                     aggWriter);
+
+                // Dispose temporary bitmaps created for split pages to
+                // release native memory. The original full bitmap is
+                // disposed by the surrounding using statement.
+                if (!ReferenceEquals(bmp, full))
+                    bmp.Dispose();
             }
         }
 
