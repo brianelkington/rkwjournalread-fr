@@ -10,17 +10,21 @@ This .NET console application processes scanned journal images using Azure AI Do
 - Outputs recognized text, word confidences, and per-page logs.
 - Optionally saves annotated images with word bounding boxes.
 - Aggregates results and statistics.
+- Detects German text and saves an English translation using Azure AI Translator.
 
 ## Usage
 
 1. **Configure Azure Credentials**
 
-   Edit `appsettings.json` with your Azure Form Recognizer endpoint and key:
+   Edit `appsettings.json` with your Azure Form Recognizer and Translator settings:
    ```json
    {
-     "DocumentAnalysisEndpoint": "<your-endpoint>",
-     "DocumentAnalysisKey": "<your-key>",
-     "DocumentAnalysisModelId": "prebuilt-read"
+     "DocumentAnalysisEndpoint": "<your-form-recognizer-endpoint>",
+     "DocumentAnalysisKey": "<your-form-recognizer-key>",
+     "DocumentAnalysisModelId": "prebuilt-read",
+     "TranslatorEndpoint": "<your-translator-endpoint>",
+     "TranslatorKey": "<your-translator-key>",
+     "TranslatorRegion": "<your-translator-region>"   
    }
    ```
 
@@ -51,4 +55,4 @@ This .NET console application processes scanned journal images using Azure AI Do
 
 - Double-page scans are split automatically if `Split` is true in the JSON or by default for folder input.
 - Word confidences and bounding boxes are available in verbose mode.
-- See `Program.cs` for
+- See `Program.cs` for details

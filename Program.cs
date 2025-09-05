@@ -379,7 +379,7 @@ namespace read_journal_documentanalysis
             try
             {
                 using var http = new HttpClient();
-                string url = TranslatorEndpoint.TrimEnd('/') + "/translate?api-version=3.0&to=en";
+                string url = TranslatorEndpoint.TrimEnd('/') + "/translator/text/v3.0/translate?api-version=3.0&to=en";
 
                 Console.WriteLine($"URL: {url}");
 
