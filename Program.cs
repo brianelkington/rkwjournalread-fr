@@ -368,9 +368,6 @@ namespace read_journal_documentanalysis
 
         static string? TranslateIfGerman(string text)
         {
-
-            Console.WriteLine("Test for German text");
-
             if (string.IsNullOrWhiteSpace(text)) return null;
             if (string.IsNullOrWhiteSpace(TranslatorEndpoint) ||
                 string.IsNullOrWhiteSpace(TranslatorKey) ||
@@ -380,9 +377,6 @@ namespace read_journal_documentanalysis
             {
                 using var http = new HttpClient();
                 string url = TranslatorEndpoint.TrimEnd('/') + "/translator/text/v3.0/translate?api-version=3.0&to=en";
-
-                Console.WriteLine($"URL: {url}");
-
                 var body = JsonSerializer.Serialize(new[] { new { Text = text } });
                 using var req = new HttpRequestMessage(HttpMethod.Post, url)
                 {
@@ -408,8 +402,6 @@ namespace read_journal_documentanalysis
                 var first = doc.RootElement[0];
                 string? lang = first.GetProperty("detectedLanguage").GetProperty("language").GetString();
 
-                Console.WriteLine($"***** Language {lang}");
-
                 if (lang == null || !lang.StartsWith("de", StringComparison.OrdinalIgnoreCase))
                     return null;
                 var translated = first.GetProperty("translations")[0].GetProperty("text").GetString();
@@ -417,7 +409,6 @@ namespace read_journal_documentanalysis
             }
             catch
             {
-                Console.WriteLine("***** Exception during translation");
                 return null;
             }
         }
