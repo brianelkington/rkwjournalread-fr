@@ -11,6 +11,9 @@ using Azure.Core;
 using Azure.AI.FormRecognizer.DocumentAnalysis;
 using Microsoft.Extensions.Configuration;
 using SkiaSharp;
+using System.Net.Http;
+
+#nullable enable
 
 namespace read_journal_documentanalysis
 {
@@ -30,6 +33,9 @@ namespace read_journal_documentanalysis
         private const int JpegQuality = 50;
         private const string DefaultFolder = "images";
         private const string OutputFolder = "image_out";
+        private static string TranslatorEndpoint = "";
+        private static string TranslatorKey = "";
+        private static string TranslatorRegion = "";
 
         static void Main(string[] args)
         {
@@ -91,6 +97,16 @@ namespace read_journal_documentanalysis
             string endpoint = cfg["DocumentAnalysisEndpoint"];
             string apiKey = cfg["DocumentAnalysisKey"];
             string modelId = cfg["DocumentAnalysisModelId"] ?? "prebuilt-read";
+
+            TranslatorEndpoint = cfg["TranslatorEndpoint"] ?? "";
+            TranslatorKey = cfg["TranslatorKey"] ?? "";
+            TranslatorRegion = cfg["TranslatorRegion"] ?? "";
+            if (string.IsNullOrWhiteSpace(TranslatorEndpoint) ||
+                string.IsNullOrWhiteSpace(TranslatorKey) ||
+                string.IsNullOrWhiteSpace(TranslatorRegion))
+            {
+                Console.Error.WriteLine("Missing Translator configuration in appsettings.json; German translation will be skipped.");
+            }
 
             if (string.IsNullOrWhiteSpace(endpoint) || string.IsNullOrWhiteSpace(apiKey))
             {
@@ -233,10 +249,27 @@ namespace read_journal_documentanalysis
                 {
                     // Lines
                     Console.WriteLine("Recognized Text:");
+                    var sbText = new StringBuilder();
                     foreach (var page in result.Pages)
+                    {
                         foreach (var line in page.Lines)
+                        {
                             Console.WriteLine($"  {line.Content}");
-                            
+
+                            sbText.AppendLine(line.Content);
+                        }
+                    }
+
+                    // Detect language and translate if German
+                    string? translated = TranslateIfGerman(sbText.ToString());
+                    if (!string.IsNullOrEmpty(translated))
+                    {
+                        string transPath = Path.Combine(outputBase, pageName + "_en.txt");
+                        File.WriteAllText(transPath, translated);
+                        if (verbose)
+                            Console.WriteLine($"\nDetected German text. Translation saved to {Path.GetFileName(transPath)}");
+                    }
+
                     if (verbose)
                         Console.WriteLine("\nWord confidences:");
                     double pageSum = 0;
@@ -331,6 +364,62 @@ namespace read_journal_documentanalysis
             bmp.Encode(outStream, SKEncodedImageFormat.Jpeg, JpegQuality);
             if (verbose)
                 Console.WriteLine($"Saved {Path.GetFileName(outputPath)}");
+        }
+
+        static string? TranslateIfGerman(string text)
+        {
+
+            Console.WriteLine("Test for German text");
+
+            if (string.IsNullOrWhiteSpace(text)) return null;
+            if (string.IsNullOrWhiteSpace(TranslatorEndpoint) ||
+                string.IsNullOrWhiteSpace(TranslatorKey) ||
+                string.IsNullOrWhiteSpace(TranslatorRegion))
+                return null;
+            try
+            {
+                using var http = new HttpClient();
+                string url = TranslatorEndpoint.TrimEnd('/') + "/translate?api-version=3.0&to=en";
+
+                Console.WriteLine($"URL: {url}");
+
+                var body = JsonSerializer.Serialize(new[] { new { Text = text } });
+                using var req = new HttpRequestMessage(HttpMethod.Post, url)
+                {
+                    Content = new StringContent(body, Encoding.UTF8, "application/json")
+                };
+                req.Headers.Add("Ocp-Apim-Subscription-Key", TranslatorKey);
+                req.Headers.Add("Ocp-Apim-Subscription-Region", TranslatorRegion);
+
+                var resp = http.SendAsync(req).GetAwaiter().GetResult();
+                try
+                {
+                    resp.EnsureSuccessStatusCode();
+                    // Continue with translation logic
+                }
+                catch (HttpRequestException ex)
+                {
+                    // Log or handle the error, inspect ex.StatusCode if needed
+                    Console.WriteLine($"HTTP error: {ex.Message}, StatusCode: {ex.StatusCode}");
+                    // Optionally, return a fallback translation or error message
+                }
+                string json = resp.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+                using var doc = JsonDocument.Parse(json);
+                var first = doc.RootElement[0];
+                string? lang = first.GetProperty("detectedLanguage").GetProperty("language").GetString();
+
+                Console.WriteLine($"***** Language {lang}");
+
+                if (lang == null || !lang.StartsWith("de", StringComparison.OrdinalIgnoreCase))
+                    return null;
+                var translated = first.GetProperty("translations")[0].GetProperty("text").GetString();
+                return translated;
+            }
+            catch
+            {
+                Console.WriteLine("***** Exception during translation");
+                return null;
+            }
         }
 
         static void DrawPolygon(SKCanvas canvas, SKPoint[] pts, SKPaint paint)
