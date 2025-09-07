@@ -9,10 +9,15 @@ variable "location" {
 
 }
 
+resource "time_static" "created" {}
+
 locals {
   tags = {
     cost-center = "rkw"
     environment = "dev"
-    team        = "team-ba"
+    team        = "briane"
+    created-by  = "terraform"
+    created-on  = time_static.created.rfc3339
+    updated-on  = timestamp()
   }
 }
