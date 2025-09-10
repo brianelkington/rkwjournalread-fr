@@ -9,6 +9,9 @@ using System.Text.Json.Serialization;
 using Azure;
 using Azure.AI.FormRecognizer.DocumentAnalysis;
 using Azure.AI.OpenAI;
+using Azure.AI.OpenAI.Chat;
+using OpenAI.Chat;
+using System.ClientModel;
 using Microsoft.Extensions.Configuration;
 using SkiaSharp;
 using System.Net.Http;
@@ -132,10 +135,10 @@ namespace read_journal_documentanalysis
             var client = new DocumentAnalysisClient(new Uri(endpoint), new AzureKeyCredential(apiKey));
 
             // Create OpenAI client if configured
-            OpenAIClient? openAiClient = null;
+            AzureOpenAIClient? openAiClient = null;
             if (!string.IsNullOrWhiteSpace(OpenAIEndpoint) && !string.IsNullOrWhiteSpace(OpenAIKey))
             {
-                openAiClient = new OpenAIClient(new Uri(OpenAIEndpoint), new AzureKeyCredential(OpenAIKey));
+                openAiClient = new AzureOpenAIClient(new Uri(OpenAIEndpoint), new AzureKeyCredential(OpenAIKey));
             }
 
             // Prepare output
@@ -186,7 +189,7 @@ namespace read_journal_documentanalysis
             ref double totalWordConf,
             ref int totalWordCount,
             StreamWriter aggWriter,
-            OpenAIClient? openAiClient // add parameter
+            AzureOpenAIClient? openAiClient // add parameter
         )
         {
             using var full = LoadAndOrientImage(imagePath);
@@ -240,7 +243,7 @@ namespace read_journal_documentanalysis
             ref double totalWordConf,
             ref int totalWordCount,
             StreamWriter aggWriter,
-            OpenAIClient? openAiClient // add parameter
+            AzureOpenAIClient? openAiClient // add parameter
         )
         {
             // Set up logging → console + per-page + aggregator
@@ -321,21 +324,19 @@ namespace read_journal_documentanalysis
                     var correctedSentences = new List<string>();
                     if (openAiClient != null)
                     {
+                        var chatClient = openAiClient.GetChatClient(OpenAIDeployment);
                         foreach (var sentence in sentences)
                         {
                             var prompt = $"Correct any OCR errors in this sentence, especially those caused by cursive handwriting: \"{sentence}\"";
-                            var chatCompletionsOptions = new ChatCompletionsOptions()
+                            ChatMessage[] messages =
                             {
-                                Messages =
-                                {
-                                    new ChatMessage(ChatRole.System, "You are an expert at correcting OCR errors in handwritten text."),
-                                    new ChatMessage(ChatRole.User, prompt)
-                                },
-                                Temperature = 0.2f
+                                new SystemChatMessage("You are an expert at correcting OCR errors in handwritten text."),
+                                new UserChatMessage(prompt)
                             };
 
-                            var response = openAiClient.GetChatCompletions(OpenAIDeployment, chatCompletionsOptions);
-                            var corrected = response.Value.Choices[0].Message.Content.Trim();
+                            var options = new ChatCompletionOptions { Temperature = 0.2f };
+                            ChatCompletion response = chatClient.CompleteChat(messages, options);
+                            var corrected = response.Content[0].Text.Trim();
                             correctedSentences.Add(corrected);
                         }
                         if (correctedSentences.Any())
@@ -565,8 +566,8 @@ namespace read_journal_documentanalysis
         public TeeTextWriter(TextWriter a, TextWriter b) { _a = a; _b = b; }
         public override Encoding Encoding => _a.Encoding;
         public override void Write(char c) { _a.Write(c); _b.Write(c); }
-        public override void Write(string s) { _a.Write(s); _b.Write(s); }
-        public override void WriteLine(string s) { _a.WriteLine(s); _b.WriteLine(s); }
+        public override void Write(string? s) { _a.Write(s); _b.Write(s); }
+        public override void WriteLine(string? s) { _a.WriteLine(s); _b.WriteLine(s); }
         public override void Flush() { _a.Flush(); _b.Flush(); }
     }
 }
