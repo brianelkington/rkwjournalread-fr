@@ -249,34 +249,41 @@ namespace read_journal_documentanalysis
                     // Lines
                     Console.WriteLine("Recognized Text:");
                     var sbText = new StringBuilder();
+                    var sentences = new List<string>();
                     foreach (var page in result.Pages)
                     {
                         foreach (var line in page.Lines)
                         {
                             Console.WriteLine($"  {line.Content}");
-
                             sbText.AppendLine(line.Content);
+
+                            // Split line into sentences using basic punctuation
+                            var lineSentences = line.Content
+                                .Split(new[] { '.', '!', '?' }, StringSplitOptions.RemoveEmptyEntries)
+                                .Select(s => s.Trim())
+                                .Where(s => !string.IsNullOrWhiteSpace(s));
+                            sentences.AddRange(lineSentences);
                         }
                     }
 
-                    // Detect language and translate if German
-                    string? translated = TranslateIfGerman(sbText.ToString());
-                    if (!string.IsNullOrEmpty(translated))
+                    // Detect language and translate if German, sentence by sentence
+                    var translatedSentences = new List<string>();
+                    foreach (var sentence in sentences)
+                    {
+                        string? translated = TranslateIfGerman(sentence);
+                        if (!string.IsNullOrEmpty(translated))
+                        {
+                            translatedSentences.Add(translated);
+                            aggWriter.WriteLine("***** " + translated);
+                        }
+                    }
+
+                    if (translatedSentences.Any())
                     {
                         string transPath = Path.Combine(outputBase, pageName + "_en.txt");
-                        File.WriteAllText(transPath, translated);
+                        File.WriteAllLines(transPath, translatedSentences);
                         if (verbose)
-                            Console.WriteLine($"\nDetected German text. Translation saved to {Path.GetFileName(transPath)}");
-
-                        // Write translation to aggregator.txt with prefix
-                        using (var reader = new StringReader(translated))
-                        {
-                            string? line;
-                            while ((line = reader.ReadLine()) != null)
-                            {
-                                aggWriter.WriteLine("***** " + line);
-                            }
-                        }
+                            Console.WriteLine($"\nDetected German text. Sentence translations saved to {Path.GetFileName(transPath)}");
                     }
 
                     if (verbose)
