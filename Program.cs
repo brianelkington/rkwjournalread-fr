@@ -7,7 +7,6 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Azure;
-using Azure.Core;
 using Azure.AI.FormRecognizer.DocumentAnalysis;
 using Microsoft.Extensions.Configuration;
 using SkiaSharp;
@@ -268,6 +267,16 @@ namespace read_journal_documentanalysis
                         File.WriteAllText(transPath, translated);
                         if (verbose)
                             Console.WriteLine($"\nDetected German text. Translation saved to {Path.GetFileName(transPath)}");
+
+                        // Write translation to aggregator.txt with prefix
+                        using (var reader = new StringReader(translated))
+                        {
+                            string? line;
+                            while ((line = reader.ReadLine()) != null)
+                            {
+                                aggWriter.WriteLine("***** " + line);
+                            }
+                        }
                     }
 
                     if (verbose)
