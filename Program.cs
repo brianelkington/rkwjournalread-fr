@@ -8,6 +8,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Azure;
 using Azure.AI.FormRecognizer.DocumentAnalysis;
+using Azure.AI.OpenAI;
 using Microsoft.Extensions.Configuration;
 using SkiaSharp;
 using System.Net.Http;
@@ -35,6 +36,9 @@ namespace read_journal_documentanalysis
         private static string TranslatorEndpoint = "";
         private static string TranslatorKey = "";
         private static string TranslatorRegion = "";
+        private static string OpenAIEndpoint = "";
+        private static string OpenAIKey = "";
+        private static string OpenAIDeployment = "";
 
         static void Main(string[] args)
         {
@@ -100,6 +104,10 @@ namespace read_journal_documentanalysis
             TranslatorEndpoint = cfg["TranslatorEndpoint"] ?? "";
             TranslatorKey = cfg["TranslatorKey"] ?? "";
             TranslatorRegion = cfg["TranslatorRegion"] ?? "";
+            OpenAIEndpoint = cfg["OpenAIEndpoint"] ?? "";
+            OpenAIKey = cfg["OpenAIKey"] ?? "";
+            OpenAIDeployment = cfg["OpenAIDeployment"] ?? "";
+
             if (string.IsNullOrWhiteSpace(TranslatorEndpoint) ||
                 string.IsNullOrWhiteSpace(TranslatorKey) ||
                 string.IsNullOrWhiteSpace(TranslatorRegion))
@@ -113,14 +121,29 @@ namespace read_journal_documentanalysis
                 return;
             }
 
+            if (string.IsNullOrWhiteSpace(OpenAIEndpoint) ||
+                string.IsNullOrWhiteSpace(OpenAIKey) ||
+                string.IsNullOrWhiteSpace(OpenAIDeployment))
+            {
+                Console.Error.WriteLine("Missing OpenAI configuration in appsettings.json; OCR correction will be skipped.");
+            }
+
             // Create client
             var client = new DocumentAnalysisClient(new Uri(endpoint), new AzureKeyCredential(apiKey));
+
+            // Create OpenAI client if configured
+            OpenAIClient? openAiClient = null;
+            if (!string.IsNullOrWhiteSpace(OpenAIEndpoint) && !string.IsNullOrWhiteSpace(OpenAIKey))
+            {
+                openAiClient = new OpenAIClient(new Uri(OpenAIEndpoint), new AzureKeyCredential(OpenAIKey));
+            }
 
             // Prepare output
             string outputBase = Path.Combine(baseInputFolder, OutputFolder);
             Directory.CreateDirectory(outputBase);
-            string aggPath = Path.Combine(outputBase, "aggregator.txt");
-            using var aggWriter = new StreamWriter(aggPath, append: false) { AutoFlush = true };
+            string aggregatorFileName = $"aggregator_{DateTime.Now:yyyyMMdd_HHmmss}.txt";
+            string aggregatorPath = Path.Combine(outputBase, aggregatorFileName);
+            using var aggWriter = new StreamWriter(aggregatorPath, append: false) { AutoFlush = true };
 
             double totalWordConf = 0;
             int totalWordCount = 0;
@@ -139,7 +162,9 @@ namespace read_journal_documentanalysis
                     outputBase,
                     ref totalWordConf,
                     ref totalWordCount,
-                    aggWriter);
+                    aggWriter,
+                    openAiClient // pass client
+                );
             }
 
             overallSw.Stop();
@@ -160,7 +185,9 @@ namespace read_journal_documentanalysis
             string outputBase,
             ref double totalWordConf,
             ref int totalWordCount,
-            StreamWriter aggWriter)
+            StreamWriter aggWriter,
+            OpenAIClient? openAiClient // add parameter
+        )
         {
             using var full = LoadAndOrientImage(imagePath);
             string baseName = Path.GetFileNameWithoutExtension(imagePath);
@@ -190,7 +217,9 @@ namespace read_journal_documentanalysis
                     baseName + suffix,
                     ref totalWordConf,
                     ref totalWordCount,
-                    aggWriter);
+                    aggWriter,
+                    openAiClient // pass client
+                );
 
                 // Dispose temporary bitmaps created for split pages to
                 // release native memory. The original full bitmap is
@@ -210,7 +239,9 @@ namespace read_journal_documentanalysis
             string pageName,
             ref double totalWordConf,
             ref int totalWordCount,
-            StreamWriter aggWriter)
+            StreamWriter aggWriter,
+            OpenAIClient? openAiClient // add parameter
+        )
         {
             // Set up logging → console + per-page + aggregator
             var origOut = Console.Out;
@@ -284,6 +315,60 @@ namespace read_journal_documentanalysis
                         File.WriteAllLines(transPath, translatedSentences);
                         if (verbose)
                             Console.WriteLine($"\nDetected German text. Sentence translations saved to {Path.GetFileName(transPath)}");
+                    }
+
+                    // --- Azure OpenAI Correction ---
+                    var correctedSentences = new List<string>();
+                    if (openAiClient != null)
+                    {
+                        foreach (var sentence in sentences)
+                        {
+                            var prompt = $"Correct any OCR errors in this sentence, especially those caused by cursive handwriting: \"{sentence}\"";
+                            var chatCompletionsOptions = new ChatCompletionsOptions()
+                            {
+                                Messages =
+                                {
+                                    new ChatMessage(ChatRole.System, "You are an expert at correcting OCR errors in handwritten text."),
+                                    new ChatMessage(ChatRole.User, prompt)
+                                },
+                                Temperature = 0.2f
+                            };
+
+                            var response = openAiClient.GetChatCompletions(OpenAIDeployment, chatCompletionsOptions);
+                            var corrected = response.Value.Choices[0].Message.Content.Trim();
+                            correctedSentences.Add(corrected);
+                        }
+                        if (correctedSentences.Any())
+                        {
+                            string correctedPath = Path.Combine(outputBase, pageName + "_corrected.txt");
+                            File.WriteAllLines(correctedPath, correctedSentences);
+                            if (verbose)
+                                Console.WriteLine($"\nCorrected sentences saved to {Path.GetFileName(correctedPath)}");
+                        }
+                    }
+                    else
+                    {
+                        correctedSentences = sentences;
+                    }
+
+                    // --- Translation ---
+                    var finalTranslatedSentences = new List<string>();
+                    foreach (var sentence in correctedSentences)
+                    {
+                        string? translated = TranslateIfGerman(sentence);
+                        if (!string.IsNullOrEmpty(translated))
+                        {
+                            finalTranslatedSentences.Add(translated);
+                            aggWriter.WriteLine("***** " + translated);
+                        }
+                    }
+
+                    if (finalTranslatedSentences.Any())
+                    {
+                        string transPath = Path.Combine(outputBase, pageName + "_final_en.txt");
+                        File.WriteAllLines(transPath, finalTranslatedSentences);
+                        if (verbose)
+                            Console.WriteLine($"\nFinal translations saved to {Path.GetFileName(transPath)}");
                     }
 
                     if (verbose)
