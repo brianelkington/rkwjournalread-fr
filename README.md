@@ -1,22 +1,23 @@
 # RKW Journal Reader - Document Analysis
 
-This .NET console application processes scanned journal images using Azure AI Document Intelligence (Form Recognizer). It extracts text and word confidences, optionally annotates images, and aggregates results.
+This .NET console application processes scanned journal images using Azure AI Document Intelligence (Form Recognizer). It extracts text and word confidences, optionally annotates images, and aggregates results. German sentences are automatically detected and translated to English.
 
 ## Features
 
 - Processes images from a folder or a JSON list.
 - Uses Azure Form Recognizer (Document Intelligence) for OCR.
-- Supports splitting double-page scans.
+- Splits double-page scans if needed.
 - Outputs recognized text, word confidences, and per-page logs.
 - Optionally saves annotated images with word bounding boxes.
 - Aggregates results and statistics.
-- Detects German text and saves an English translation using Azure AI Translator.
+- **German sentences are detected and translated to English.**  
+  Translations are saved per page and also written to `aggregator.txt` with a `***** ` prefix for easy identification.
 
 ## Usage
 
 1. **Configure Azure Credentials**
 
-   Edit `appsettings.json` with your Azure Form Recognizer and Translator settings:
+   Edit `appsettings.json` with your Azure Form Recognizer and Translator endpoint and keys:
    ```json
    {
      "DocumentAnalysisEndpoint": "<your-form-recognizer-endpoint>",
@@ -24,7 +25,7 @@ This .NET console application processes scanned journal images using Azure AI Do
      "DocumentAnalysisModelId": "prebuilt-read",
      "TranslatorEndpoint": "<your-translator-endpoint>",
      "TranslatorKey": "<your-translator-key>",
-     "TranslatorRegion": "<your-translator-region>"   
+     "TranslatorRegion": "<your-translator-region>"
    }
    ```
 
@@ -44,15 +45,22 @@ This .NET console application processes scanned journal images using Azure AI Do
    - Per-page logs: `<image>_L.out`, `<image>_R.out`, etc.
    - Aggregated text: `aggregator.txt`
    - Annotated images: `<image>_words.jpg` (if enabled)
+   - Translations: `<image>_L_en.txt`, `<image>_R_en.txt` (if German detected)
 
 ## Requirements
 
 - .NET 6 or later
 - Azure Form Recognizer resource and API key
+- Azure Translator resource and API key
 - SkiaSharp NuGet package
 
 ## Notes
 
 - Double-page scans are split automatically if `Split` is true in the JSON or by default for folder input.
 - Word confidences and bounding boxes are available in verbose mode.
-- See `Program.cs` for details
+- German sentence detection and translation is performed sentence-by-sentence for improved accuracy.
+- See `Program.cs` for implementation details.
+
+## License
+
+This project is licensed under the MIT License. See
