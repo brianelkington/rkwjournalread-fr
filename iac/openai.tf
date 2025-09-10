@@ -20,7 +20,7 @@ resource "azurerm_cognitive_deployment" "rkw-gpt" {
   model {
     format  = "OpenAI"
     name    = "gpt-4o-mini"
-    version = "2021-04-30" // Use the latest available version for GPT-4o Mini
+    version = "2024-07-18" // Use the latest available version for GPT-4o Mini
   }
 
   sku {
