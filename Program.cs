@@ -47,6 +47,7 @@ namespace read_journal_documentanalysis
         {
             bool saveImages = args.Any(a => a.Equals("--save-images", StringComparison.OrdinalIgnoreCase));
             bool verbose = args.Any(a => a.Equals("--verbose", StringComparison.OrdinalIgnoreCase));
+            bool correctTranslations = args.Any(a => a.Equals("--correct-translations", StringComparison.OrdinalIgnoreCase));
 
             // Determine input: folder or JSON
             string inputArg = args.FirstOrDefault(a => !a.StartsWith("--")) ?? DefaultFolder;
@@ -166,7 +167,8 @@ namespace read_journal_documentanalysis
                     ref totalWordConf,
                     ref totalWordCount,
                     aggWriter,
-                    openAiClient // pass client
+                    openAiClient,
+                    correctTranslations // pass flag
                 );
             }
 
@@ -178,6 +180,7 @@ namespace read_journal_documentanalysis
             Console.WriteLine($"Total time: {overallSw.Elapsed:c}");
         }
 
+        // Update method signatures to accept the flag
         static void ProcessImageFile(
             string imagePath,
             bool split,
@@ -189,7 +192,8 @@ namespace read_journal_documentanalysis
             ref double totalWordConf,
             ref int totalWordCount,
             StreamWriter aggWriter,
-            AzureOpenAIClient? openAiClient // add parameter
+            AzureOpenAIClient? openAiClient,
+            bool correctTranslations // add parameter
         )
         {
             using var full = LoadAndOrientImage(imagePath);
@@ -221,7 +225,8 @@ namespace read_journal_documentanalysis
                     ref totalWordConf,
                     ref totalWordCount,
                     aggWriter,
-                    openAiClient // pass client
+                    openAiClient,
+                    correctTranslations // pass flag
                 );
 
                 // Dispose temporary bitmaps created for split pages to
@@ -243,7 +248,8 @@ namespace read_journal_documentanalysis
             ref double totalWordConf,
             ref int totalWordCount,
             StreamWriter aggWriter,
-            AzureOpenAIClient? openAiClient // add parameter
+            AzureOpenAIClient? openAiClient,
+            bool correctTranslations // add parameter
         )
         {
             // Set up logging → console + per-page + aggregator
@@ -284,6 +290,8 @@ namespace read_journal_documentanalysis
                     Console.WriteLine("Recognized Text:");
                     var sbText = new StringBuilder();
                     var sentences = new List<string>();
+                    var sentenceConfidences = new List<double>();
+
                     foreach (var page in result.Pages)
                     {
                         foreach (var line in page.Lines)
@@ -295,38 +303,41 @@ namespace read_journal_documentanalysis
                             var lineSentences = line.Content
                                 .Split(new[] { '.', '!', '?' }, StringSplitOptions.RemoveEmptyEntries)
                                 .Select(s => s.Trim())
-                                .Where(s => !string.IsNullOrWhiteSpace(s));
+                                .Where(s => !string.IsNullOrWhiteSpace(s))
+                                .ToList();
+
                             sentences.AddRange(lineSentences);
-                        }
-                    }
 
-                    // Detect language and translate if German, sentence by sentence
-                    var translatedSentences = new List<string>();
-                    foreach (var sentence in sentences)
-                    {
-                        string? translated = TranslateIfGerman(sentence);
-                        if (!string.IsNullOrEmpty(translated))
-                        {
-                            translatedSentences.Add(translated);
-                            aggWriter.WriteLine("***** " + translated);
+                            // Estimate confidence for each sentence as average of word confidences in the line
+                            if (line.Spans != null && line.Spans.Count > 0)
+                            {
+                                // Find words that are within the spans of this line
+                                var pageWords = page.Words;
+                                var spanStart = line.Spans[0].Index;
+                                var spanEnd = line.Spans[line.Spans.Count - 1].Index + line.Spans[line.Spans.Count - 1].Length;
+                                var wordsInLine = pageWords
+                                    .Where(w => w.Span.Index >= spanStart && (w.Span.Index + w.Span.Length) <= spanEnd)
+                                    .ToList();
+                                double avgConf = wordsInLine.Any() ? wordsInLine.Average(w => w.Confidence) : 0.0;
+                                for (int i = 0; i < lineSentences.Count; i++)
+                                    sentenceConfidences.Add(avgConf);
+                            }
+                            else
+                            {
+                                for (int i = 0; i < lineSentences.Count; i++)
+                                    sentenceConfidences.Add(0.0);
+                            }
                         }
-                    }
-
-                    if (translatedSentences.Any())
-                    {
-                        string transPath = Path.Combine(outputBase, pageName + "_en.txt");
-                        File.WriteAllLines(transPath, translatedSentences);
-                        if (verbose)
-                            Console.WriteLine($"\nDetected German text. Sentence translations saved to {Path.GetFileName(transPath)}");
                     }
 
                     // --- Azure OpenAI Correction ---
                     var correctedSentences = new List<string>();
-                    if (openAiClient != null)
+                    if (openAiClient != null && correctTranslations)
                     {
                         var chatClient = openAiClient.GetChatClient(OpenAIDeployment);
-                        foreach (var sentence in sentences)
+                        for (int i = 0; i < sentences.Count; i++)
                         {
+                            var sentence = sentences[i];
                             var prompt = $"Correct any OCR errors in this sentence, especially those caused by cursive handwriting: \"{sentence}\"";
                             ChatMessage[] messages =
                             {
@@ -338,54 +349,52 @@ namespace read_journal_documentanalysis
                             ChatCompletion response = chatClient.CompleteChat(messages, options);
                             var corrected = response.Content[0].Text.Trim();
                             correctedSentences.Add(corrected);
-                        }
-                        if (correctedSentences.Any())
-                        {
-                            string correctedPath = Path.Combine(outputBase, pageName + "_corrected.txt");
-                            File.WriteAllLines(correctedPath, correctedSentences);
-                            if (verbose)
-                                Console.WriteLine($"\nCorrected sentences saved to {Path.GetFileName(correctedPath)}");
+
+                            Console.WriteLine($"********** {corrected} (Confidence: {sentenceConfidences[i]:P2})");
                         }
                     }
                     else
                     {
                         correctedSentences = sentences;
+                        for (int i = 0; i < sentences.Count; i++)
+                        {
+                            Console.WriteLine($"********** {sentences[i]} (Confidence: {sentenceConfidences[i]:P2})");
+                        }
                     }
 
-                    // --- Translation ---
-                    var finalTranslatedSentences = new List<string>();
-                    foreach (var sentence in correctedSentences)
+                    // --- Translation and writing to _en.txt ---
+                    var enLines = new List<string>();
+                    for (int i = 0; i < sentences.Count; i++)
                     {
-                        string? translated = TranslateIfGerman(sentence);
+                        string germanText = sentences[i];
+                        string textToTranslate;
+                        if (correctTranslations && openAiClient != null)
+                        {
+                            textToTranslate = correctedSentences[i];
+                            enLines.Add($"********** OCR German: {germanText} (Confidence: {sentenceConfidences[i]:P2})");
+                            enLines.Add($"********** Corrected: {textToTranslate} (Confidence: {sentenceConfidences[i]:P2})");
+                        }
+                        else
+                        {
+                            textToTranslate = germanText;
+                            enLines.Add($"********** OCR German: {germanText} (Confidence: {sentenceConfidences[i]:P2})");
+                        }
+
+                        string? translated = TranslateIfGerman(textToTranslate);
                         if (!string.IsNullOrEmpty(translated))
                         {
-                            finalTranslatedSentences.Add(translated);
+                            enLines.Add($"********** English Translation: {translated} (Confidence: {sentenceConfidences[i]:P2})");
                             aggWriter.WriteLine("***** " + translated);
                         }
                     }
 
-                    if (finalTranslatedSentences.Any())
+                    if (enLines.Any())
                     {
-                        string transPath = Path.Combine(outputBase, pageName + "_final_en.txt");
-                        File.WriteAllLines(transPath, finalTranslatedSentences);
+                        string transPath = Path.Combine(outputBase, pageName + "_en.txt");
+                        File.WriteAllLines(transPath, enLines);
                         if (verbose)
-                            Console.WriteLine($"\nFinal translations saved to {Path.GetFileName(transPath)}");
+                            Console.WriteLine($"\nGerman, corrected, and translated sentences saved to {Path.GetFileName(transPath)}");
                     }
-
-                    if (verbose)
-                        Console.WriteLine("\nWord confidences:");
-                    double pageSum = 0;
-                    foreach (var w in words)
-                    {
-                        if (verbose)
-                            Console.WriteLine($"  {w.Content} (Conf:{w.Confidence:P2})");
-                        pageSum += w.Confidence;
-                    }
-                    double pageAvg = pageSum / words.Count;
-                    Console.WriteLine($"\nAverage word confidence for {pageName}: {pageAvg:P2}");
-
-                    totalWordConf += pageSum;
-                    totalWordCount += words.Count;
                 }
                 else
                 {
