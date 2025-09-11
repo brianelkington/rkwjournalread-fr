@@ -4,7 +4,7 @@ resource "azurerm_cognitive_account" "rkw-fr" {
   resource_group_name = azurerm_resource_group.rkw.name
   kind                = "FormRecognizer"
 
-  sku_name              = "F0"
+  sku_name              = "S0"
   custom_subdomain_name = "rkwjournalreaderfr"
 
   # use storage account for this rg
