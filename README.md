@@ -49,7 +49,7 @@ This .NET console application processes scanned journal images using Azure AI Do
 
 ## Requirements
 
-- .NET 6 or later
+- .NET 9 or later
 - Azure Form Recognizer resource and API key
 - Azure Translator resource and API key
 - SkiaSharp NuGet package
@@ -63,4 +63,4 @@ This .NET console application processes scanned journal images using Azure AI Do
 
 ## License
 
-This project is licensed under the MIT License. See
+This project is licensed under the MIT License.
