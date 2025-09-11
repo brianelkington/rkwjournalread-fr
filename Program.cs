@@ -3,6 +3,8 @@ using System.IO;
 using System.Linq;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Collections.Concurrent;
+using System.Threading.Tasks;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -149,14 +151,12 @@ namespace read_journal_documentanalysis
             string aggregatorPath = Path.Combine(outputBase, aggregatorFileName);
             using var aggWriter = new StreamWriter(aggregatorPath, append: false) { AutoFlush = true };
 
-            double totalWordConf = 0;
-            int totalWordCount = 0;
             var overallSw = Stopwatch.StartNew();
+            var results = new ConcurrentBag<(double wordConf, int wordCount)>();
 
-            // Process each image/entry
-            foreach (var entry in entries)
+            Parallel.ForEach(entries, entry =>
             {
-                ProcessImageFile(
+                var res = ProcessImageFile(
                     entry.Path,
                     entry.Split,
                     client,
@@ -164,15 +164,16 @@ namespace read_journal_documentanalysis
                     saveImages,
                     verbose,
                     outputBase,
-                    ref totalWordConf,
-                    ref totalWordCount,
                     aggWriter,
                     openAiClient,
                     correctTranslations // pass flag
                 );
-            }
+                results.Add(res);
+            });
 
             overallSw.Stop();
+            double totalWordConf = results.Sum(r => r.wordConf);
+            int totalWordCount = results.Sum(r => r.wordCount);
             Console.WriteLine($"\nProcessed {totalWordCount} words total.");
             Console.WriteLine($"Overall average word confidence: {(totalWordCount > 0
                 ? totalWordConf / totalWordCount
@@ -181,7 +182,7 @@ namespace read_journal_documentanalysis
         }
 
         // Update method signatures to accept the flag
-        static void ProcessImageFile(
+        static (double wordConf, int wordCount) ProcessImageFile(
             string imagePath,
             bool split,
             DocumentAnalysisClient client,
@@ -189,8 +190,6 @@ namespace read_journal_documentanalysis
             bool saveImages,
             bool verbose,
             string outputBase,
-            ref double totalWordConf,
-            ref int totalWordCount,
             StreamWriter aggWriter,
             AzureOpenAIClient? openAiClient,
             bool correctTranslations // add parameter
@@ -212,9 +211,12 @@ namespace read_journal_documentanalysis
                 pages.Add((full, ""));
             }
 
+            double localConf = 0;
+            int localCount = 0;
+
             foreach (var (bmp, suffix) in pages)
             {
-                ProcessPage(
+                var res = ProcessPage(
                     bmp,
                     client,
                     modelId,
@@ -222,12 +224,12 @@ namespace read_journal_documentanalysis
                     verbose,
                     outputBase,
                     baseName + suffix,
-                    ref totalWordConf,
-                    ref totalWordCount,
                     aggWriter,
                     openAiClient,
                     correctTranslations // pass flag
                 );
+                localConf += res.wordConf;
+                localCount += res.wordCount;
 
                 // Dispose temporary bitmaps created for split pages to
                 // release native memory. The original full bitmap is
@@ -235,9 +237,11 @@ namespace read_journal_documentanalysis
                 if (!ReferenceEquals(bmp, full))
                     bmp.Dispose();
             }
+
+            return (localConf, localCount);
         }
 
-        static void ProcessPage(
+        static (double wordConf, int wordCount) ProcessPage(
             SKBitmap bmp,
             DocumentAnalysisClient client,
             string modelId,
@@ -245,27 +249,15 @@ namespace read_journal_documentanalysis
             bool verbose,
             string outputBase,
             string pageName,
-            ref double totalWordConf,
-            ref int totalWordCount,
             StreamWriter aggWriter,
             AzureOpenAIClient? openAiClient,
             bool correctTranslations // add parameter
         )
         {
-            // Set up logging → console + per-page + aggregator
-            var origOut = Console.Out;
-            var origErr = Console.Error;
-            string logPath = Path.Combine(outputBase, pageName + ".out");
-            using var logWriter = new StreamWriter(logPath, append: false) { AutoFlush = true };
-            var consolePlusAgg = new TeeTextWriter(origOut, aggWriter);
-            var allOut = new TeeTextWriter(consolePlusAgg, logWriter);
-            Console.SetOut(allOut);
-            var errorPlusAgg = new TeeTextWriter(origErr, aggWriter);
-            var allErr = new TeeTextWriter(errorPlusAgg, logWriter);
-            Console.SetError(allErr);
-
             var sw = Stopwatch.StartNew();
             Console.WriteLine($"---------- {pageName} ----------");
+            double localWordConf = 0;
+            int localWordCount = 0;
 
             try
             {
@@ -284,11 +276,12 @@ namespace read_journal_documentanalysis
 
                 // Words
                 var words = result.Pages.SelectMany(p => p.Words).ToList();
+                localWordConf = words.Sum(w => w.Confidence);
+                localWordCount = words.Count;
                 if (words.Any())
                 {
                     // Lines
                     Console.WriteLine("Recognized Text:");
-                    var sbText = new StringBuilder();
                     var sentences = new List<string>();
                     var sentenceConfidences = new List<double>();
 
@@ -297,7 +290,6 @@ namespace read_journal_documentanalysis
                         foreach (var line in page.Lines)
                         {
                             Console.WriteLine($"  {line.Content}");
-                            sbText.AppendLine(line.Content);
 
                             // Split line into sentences using basic punctuation
                             var lineSentences = line.Content
@@ -368,14 +360,16 @@ namespace read_journal_documentanalysis
                             {
                                 Console.WriteLine($"********** English Translation: {translated} (Confidence: {confidence:P2})");
                                 outputLines.Add($"English Translation: {translated} (Confidence: {confidence:P2})");
-                                aggWriter.WriteLine("***** " + translated);
+                                lock (aggWriter)
+                                    aggWriter.WriteLine("***** " + translated);
                             }
                         }
                         else
                         {
                             Console.WriteLine($"********** English: {sentence} (Confidence: {confidence:P2})");
                             outputLines.Add($"English: {sentence} (Confidence: {confidence:P2})");
-                            aggWriter.WriteLine("***** " + sentence);
+                            lock (aggWriter)
+                                aggWriter.WriteLine("***** " + sentence);
                         }
                     }
                     if (outputLines.Any())
@@ -410,9 +404,9 @@ namespace read_journal_documentanalysis
             {
                 sw.Stop();
                 Console.WriteLine($"Done in {sw.Elapsed:c}\n");
-                Console.SetOut(origOut);
-                Console.SetError(origErr);
             }
+
+            return (localWordConf, localWordCount);
         }
 
         static SKBitmap LoadAndOrientImage(string path)
@@ -575,14 +569,4 @@ namespace read_journal_documentanalysis
         }
     }
 
-    public class TeeTextWriter : TextWriter
-    {
-        private readonly TextWriter _a, _b;
-        public TeeTextWriter(TextWriter a, TextWriter b) { _a = a; _b = b; }
-        public override Encoding Encoding => _a.Encoding;
-        public override void Write(char c) { _a.Write(c); _b.Write(c); }
-        public override void Write(string? s) { _a.Write(s); _b.Write(s); }
-        public override void WriteLine(string? s) { _a.WriteLine(s); _b.WriteLine(s); }
-        public override void Flush() { _a.Flush(); _b.Flush(); }
-    }
 }
