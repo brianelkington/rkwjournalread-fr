@@ -45,11 +45,11 @@ This .NET console application processes scanned journal images using Azure AI Do
    - Per-page logs: `<image>_L.out`, `<image>_R.out`, etc.
    - Aggregated text: `aggregator.txt`
    - Annotated images: `<image>_words.jpg` (if enabled)
-   - Translations: `<image>_L_en.txt`, `<image>_R_en.txt` (if German detected)
+   - Per-page text: `<image>.txt` with English sentences and German sentences alongside their English translations
 
 ## Requirements
 
-- .NET 6 or later
+- .NET 9 or later
 - Azure Form Recognizer resource and API key
 - Azure Translator resource and API key
 - SkiaSharp NuGet package
@@ -63,4 +63,4 @@ This .NET console application processes scanned journal images using Azure AI Do
 
 ## License
 
-This project is licensed under the MIT License. See
+This project is licensed under the MIT License.
