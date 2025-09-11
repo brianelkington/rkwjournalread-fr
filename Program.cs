@@ -330,70 +330,70 @@ namespace read_journal_documentanalysis
                         }
                     }
 
-                    // --- Azure OpenAI Correction ---
-                    var correctedSentences = new List<string>();
-                    if (openAiClient != null && correctTranslations)
-                    {
-                        var chatClient = openAiClient.GetChatClient(OpenAIDeployment);
-                        for (int i = 0; i < sentences.Count; i++)
-                        {
-                            var sentence = sentences[i];
-                            var prompt = $"Correct any OCR errors in this sentence, especially those caused by cursive handwriting: \"{sentence}\"";
-                            ChatMessage[] messages =
-                            {
-                                new SystemChatMessage("You are an expert at correcting OCR errors in handwritten text."),
-                                new UserChatMessage(prompt)
-                            };
+                    // --- Language detection, correction, and translation ---
+                    var englishLines = new List<string>();
+                    var germanLines = new List<string>();
 
-                            var options = new ChatCompletionOptions { Temperature = 0.2f };
-                            ChatCompletion response = chatClient.CompleteChat(messages, options);
-                            var corrected = response.Content[0].Text.Trim();
-                            correctedSentences.Add(corrected);
+                    ChatClient? chatClient = null;
+                    if (openAiClient != null)
+                        chatClient = openAiClient.GetChatClient(OpenAIDeployment);
 
-                            Console.WriteLine($"********** {corrected} (Confidence: {sentenceConfidences[i]:P2})");
-                        }
-                    }
-                    else
-                    {
-                        correctedSentences = sentences;
-                        for (int i = 0; i < sentences.Count; i++)
-                        {
-                            Console.WriteLine($"********** {sentences[i]} (Confidence: {sentenceConfidences[i]:P2})");
-                        }
-                    }
-
-                    // --- Translation and writing to _en.txt ---
-                    var enLines = new List<string>();
                     for (int i = 0; i < sentences.Count; i++)
                     {
-                        string germanText = sentences[i];
-                        string textToTranslate;
-                        if (correctTranslations && openAiClient != null)
+                        var sentence = sentences[i];
+                        var confidence = sentenceConfidences[i];
+                        string? lang = DetectLanguage(sentence);
+
+                        if (lang != null && lang.StartsWith("de", StringComparison.OrdinalIgnoreCase))
                         {
-                            textToTranslate = correctedSentences[i];
-                            enLines.Add($"********** OCR German: {germanText} (Confidence: {sentenceConfidences[i]:P2})");
-                            enLines.Add($"********** Corrected: {textToTranslate} (Confidence: {sentenceConfidences[i]:P2})");
+                            Console.WriteLine($"********** German: {sentence} (Confidence: {confidence:P2})");
+                            germanLines.Add($"German: {sentence} (Confidence: {confidence:P2})");
+
+                            string textToTranslate = sentence;
+                            if (correctTranslations && chatClient != null)
+                            {
+                                var prompt = $"Correct any OCR errors in this sentence, especially those caused by cursive handwriting: \"{sentence}\"";
+                                ChatMessage[] messages =
+                                {
+                                    new SystemChatMessage("You are an expert at correcting OCR errors in handwritten text."),
+                                    new UserChatMessage(prompt)
+                                };
+
+                                var options = new ChatCompletionOptions { Temperature = 0.2f };
+                                ChatCompletion response = chatClient.CompleteChat(messages, options);
+                                textToTranslate = response.Content[0].Text.Trim();
+                            }
+
+                            string? translated = TranslateGermanToEnglish(textToTranslate);
+                            if (!string.IsNullOrWhiteSpace(translated))
+                            {
+                                Console.WriteLine($"********** English Translation: {translated} (Confidence: {confidence:P2})");
+                                englishLines.Add($"English: {translated} (Confidence: {confidence:P2})");
+                                aggWriter.WriteLine("***** " + translated);
+                            }
                         }
                         else
                         {
-                            textToTranslate = germanText;
-                            enLines.Add($"********** OCR German: {germanText} (Confidence: {sentenceConfidences[i]:P2})");
-                        }
-
-                        string? translated = TranslateIfGerman(textToTranslate);
-                        if (!string.IsNullOrEmpty(translated))
-                        {
-                            enLines.Add($"********** English Translation: {translated} (Confidence: {sentenceConfidences[i]:P2})");
-                            aggWriter.WriteLine("***** " + translated);
+                            Console.WriteLine($"********** English: {sentence} (Confidence: {confidence:P2})");
+                            englishLines.Add($"English: {sentence} (Confidence: {confidence:P2})");
+                            aggWriter.WriteLine("***** " + sentence);
                         }
                     }
 
-                    if (enLines.Any())
+                    if (englishLines.Any())
                     {
-                        string transPath = Path.Combine(outputBase, pageName + "_en.txt");
-                        File.WriteAllLines(transPath, enLines);
+                        string enPath = Path.Combine(outputBase, pageName + "_en.txt");
+                        File.WriteAllLines(enPath, englishLines);
                         if (verbose)
-                            Console.WriteLine($"\nGerman, corrected, and translated sentences saved to {Path.GetFileName(transPath)}");
+                            Console.WriteLine($"\nEnglish text saved to {Path.GetFileName(enPath)}");
+                    }
+
+                    if (germanLines.Any())
+                    {
+                        string dePath = Path.Combine(outputBase, pageName + "_de.txt");
+                        File.WriteAllLines(dePath, germanLines);
+                        if (verbose)
+                            Console.WriteLine($"\nGerman text saved to {Path.GetFileName(dePath)}");
                     }
                 }
                 else
@@ -477,7 +477,38 @@ namespace read_journal_documentanalysis
                 Console.WriteLine($"Saved {Path.GetFileName(outputPath)}");
         }
 
-        static string? TranslateIfGerman(string text)
+        static string? DetectLanguage(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return null;
+            if (string.IsNullOrWhiteSpace(TranslatorEndpoint) ||
+                string.IsNullOrWhiteSpace(TranslatorKey) ||
+                string.IsNullOrWhiteSpace(TranslatorRegion))
+                return null;
+            try
+            {
+                using var http = new HttpClient();
+                string url = TranslatorEndpoint.TrimEnd('/') + "/translator/text/v3.0/detect?api-version=3.0";
+                var body = JsonSerializer.Serialize(new[] { new { Text = text } });
+                using var req = new HttpRequestMessage(HttpMethod.Post, url)
+                {
+                    Content = new StringContent(body, Encoding.UTF8, "application/json")
+                };
+                req.Headers.Add("Ocp-Apim-Subscription-Key", TranslatorKey);
+                req.Headers.Add("Ocp-Apim-Subscription-Region", TranslatorRegion);
+
+                var resp = http.SendAsync(req).GetAwaiter().GetResult();
+                resp.EnsureSuccessStatusCode();
+                string json = resp.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+                using var doc = JsonDocument.Parse(json);
+                return doc.RootElement[0].GetProperty("language").GetString();
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        static string? TranslateGermanToEnglish(string text)
         {
             if (string.IsNullOrWhiteSpace(text)) return null;
             if (string.IsNullOrWhiteSpace(TranslatorEndpoint) ||
@@ -497,26 +528,11 @@ namespace read_journal_documentanalysis
                 req.Headers.Add("Ocp-Apim-Subscription-Region", TranslatorRegion);
 
                 var resp = http.SendAsync(req).GetAwaiter().GetResult();
-                try
-                {
-                    resp.EnsureSuccessStatusCode();
-                    // Continue with translation logic
-                }
-                catch (HttpRequestException ex)
-                {
-                    // Log or handle the error, inspect ex.StatusCode if needed
-                    Console.WriteLine($"HTTP error: {ex.Message}, StatusCode: {ex.StatusCode}");
-                    // Optionally, return a fallback translation or error message
-                }
+                resp.EnsureSuccessStatusCode();
                 string json = resp.Content.ReadAsStringAsync().GetAwaiter().GetResult();
                 using var doc = JsonDocument.Parse(json);
                 var first = doc.RootElement[0];
-                string? lang = first.GetProperty("detectedLanguage").GetProperty("language").GetString();
-
-                if (lang == null || !lang.StartsWith("de", StringComparison.OrdinalIgnoreCase))
-                    return null;
-                var translated = first.GetProperty("translations")[0].GetProperty("text").GetString();
-                return translated;
+                return first.GetProperty("translations")[0].GetProperty("text").GetString();
             }
             catch
             {
