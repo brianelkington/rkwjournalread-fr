@@ -331,8 +331,7 @@ namespace read_journal_documentanalysis
                     }
 
                     // --- Language detection, correction, and translation ---
-                    var englishLines = new List<string>();
-                    var germanLines = new List<string>();
+                    var outputLines = new List<string>();
 
                     ChatClient? chatClient = null;
                     if (openAiClient != null)
@@ -346,10 +345,7 @@ namespace read_journal_documentanalysis
 
                         if (lang != null && lang.StartsWith("de", StringComparison.OrdinalIgnoreCase))
                         {
-                            Console.WriteLine($"********** German: {sentence} (Confidence: {confidence:P2})");
-                            germanLines.Add($"German: {sentence} (Confidence: {confidence:P2})");
-
-                            string textToTranslate = sentence;
+                            string textForOutput = sentence;
                             if (correctTranslations && chatClient != null)
                             {
                                 var prompt = $"Correct any OCR errors in this sentence, especially those caused by cursive handwriting: \"{sentence}\"";
@@ -361,39 +357,33 @@ namespace read_journal_documentanalysis
 
                                 var options = new ChatCompletionOptions { Temperature = 0.2f };
                                 ChatCompletion response = chatClient.CompleteChat(messages, options);
-                                textToTranslate = response.Content[0].Text.Trim();
+                                textForOutput = response.Content[0].Text.Trim();
                             }
 
-                            string? translated = TranslateGermanToEnglish(textToTranslate);
+                            Console.WriteLine($"********** German: {textForOutput} (Confidence: {confidence:P2})");
+                            outputLines.Add($"German: {textForOutput} (Confidence: {confidence:P2})");
+
+                            string? translated = TranslateGermanToEnglish(textForOutput);
                             if (!string.IsNullOrWhiteSpace(translated))
                             {
                                 Console.WriteLine($"********** English Translation: {translated} (Confidence: {confidence:P2})");
-                                englishLines.Add($"English: {translated} (Confidence: {confidence:P2})");
+                                outputLines.Add($"English Translation: {translated} (Confidence: {confidence:P2})");
                                 aggWriter.WriteLine("***** " + translated);
                             }
                         }
                         else
                         {
                             Console.WriteLine($"********** English: {sentence} (Confidence: {confidence:P2})");
-                            englishLines.Add($"English: {sentence} (Confidence: {confidence:P2})");
+                            outputLines.Add($"English: {sentence} (Confidence: {confidence:P2})");
                             aggWriter.WriteLine("***** " + sentence);
                         }
                     }
-
-                    if (englishLines.Any())
+                    if (outputLines.Any())
                     {
-                        string enPath = Path.Combine(outputBase, pageName + "_en.txt");
-                        File.WriteAllLines(enPath, englishLines);
+                        string outPath = Path.Combine(outputBase, pageName + ".txt");
+                        File.WriteAllLines(outPath, outputLines);
                         if (verbose)
-                            Console.WriteLine($"\nEnglish text saved to {Path.GetFileName(enPath)}");
-                    }
-
-                    if (germanLines.Any())
-                    {
-                        string dePath = Path.Combine(outputBase, pageName + "_de.txt");
-                        File.WriteAllLines(dePath, germanLines);
-                        if (verbose)
-                            Console.WriteLine($"\nGerman text saved to {Path.GetFileName(dePath)}");
+                            Console.WriteLine($"\nText saved to {Path.GetFileName(outPath)}");
                     }
                 }
                 else
