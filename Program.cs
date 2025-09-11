@@ -343,7 +343,7 @@ namespace read_journal_documentanalysis
                                 var prompt = $"Correct any OCR errors in this sentence, especially those caused by cursive handwriting: \"{sentence}\"";
                                 ChatMessage[] messages =
                                 {
-                                    new SystemChatMessage("You are an expert at correcting OCR errors in handwritten text."),
+                                    new SystemChatMessage("You are an expert at correcting OCR errors in handwritten text. You are also and expert at translating german to english"),
                                     new UserChatMessage(prompt)
                                 };
 
