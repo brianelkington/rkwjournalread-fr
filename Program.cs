@@ -47,6 +47,7 @@ namespace read_journal_documentanalysis
         {
             bool saveImages = args.Any(a => a.Equals("--save-images", StringComparison.OrdinalIgnoreCase));
             bool verbose = args.Any(a => a.Equals("--verbose", StringComparison.OrdinalIgnoreCase));
+            bool correctTranslations = args.Any(a => a.Equals("--correct-translations", StringComparison.OrdinalIgnoreCase));
 
             // Determine input: folder or JSON
             string inputArg = args.FirstOrDefault(a => !a.StartsWith("--")) ?? DefaultFolder;
@@ -166,7 +167,8 @@ namespace read_journal_documentanalysis
                     ref totalWordConf,
                     ref totalWordCount,
                     aggWriter,
-                    openAiClient // pass client
+                    openAiClient,
+                    correctTranslations // pass flag
                 );
             }
 
@@ -189,7 +191,8 @@ namespace read_journal_documentanalysis
             ref double totalWordConf,
             ref int totalWordCount,
             StreamWriter aggWriter,
-            AzureOpenAIClient? openAiClient // add parameter
+            AzureOpenAIClient? openAiClient,
+            bool correctTranslations // add parameter
         )
         {
             using var full = LoadAndOrientImage(imagePath);
@@ -221,7 +224,8 @@ namespace read_journal_documentanalysis
                     ref totalWordConf,
                     ref totalWordCount,
                     aggWriter,
-                    openAiClient // pass client
+                    openAiClient,
+                    correctTranslations // pass flag
                 );
 
                 // Dispose temporary bitmaps created for split pages to
@@ -243,7 +247,8 @@ namespace read_journal_documentanalysis
             ref double totalWordConf,
             ref int totalWordCount,
             StreamWriter aggWriter,
-            AzureOpenAIClient? openAiClient // add parameter
+            AzureOpenAIClient? openAiClient,
+            bool correctTranslations // add parameter
         )
         {
             // Set up logging → console + per-page + aggregator
@@ -322,7 +327,7 @@ namespace read_journal_documentanalysis
 
                     // --- Azure OpenAI Correction ---
                     var correctedSentences = new List<string>();
-                    if (openAiClient != null)
+                    if (openAiClient != null && correctTranslations)
                     {
                         var chatClient = openAiClient.GetChatClient(OpenAIDeployment);
                         foreach (var sentence in sentences)
