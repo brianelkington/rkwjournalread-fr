@@ -254,7 +254,7 @@ namespace read_journal_documentanalysis
             // Set up logging → console + per-page + aggregator
             var origOut = Console.Out;
             var origErr = Console.Error;
-            string logPath = Path.Combine(outputBase, pageName + ".out");
+            string logPath = Path.Combine(outputBase, pageName + "{DateTime.Now:yyyyMMdd_HHmmss}.txt");
             using var logWriter = new StreamWriter(logPath, append: false) { AutoFlush = true };
             var consolePlusAgg = new TeeTextWriter(origOut, aggWriter);
             var allOut = new TeeTextWriter(consolePlusAgg, logWriter);
@@ -282,11 +282,12 @@ namespace read_journal_documentanalysis
 
 
                 // Words
-                var words = result.Pages.SelectMany(p => p.Words).ToList();
+                var words = result.Pages.SelectMany(p => p.Words).ToList(); 
                 if (words.Any())
                 {
                     // Lines
-                    Console.WriteLine("Recognized Text:");
+                    if (verbose)
+                        Console.WriteLine("Recognized Text:");
                     var sbText = new StringBuilder();
                     var sentences = new List<string>();
                     foreach (var page in result.Pages)
@@ -387,7 +388,8 @@ namespace read_journal_documentanalysis
                         pageSum += w.Confidence;
                     }
                     double pageAvg = pageSum / words.Count;
-                    Console.WriteLine($"\nAverage word confidence for {pageName}: {pageAvg:P2}");
+                    if (verbose)
+                        Console.WriteLine($"\nAverage word confidence for {pageName}: {pageAvg:P2}");
 
                     totalWordConf += pageSum;
                     totalWordCount += words.Count;
@@ -415,7 +417,8 @@ namespace read_journal_documentanalysis
             finally
             {
                 sw.Stop();
-                Console.WriteLine($"Done in {sw.Elapsed:c}\n");
+                if(verbose)
+                    Console.WriteLine($"Done in {sw.Elapsed:c}\n");
                 Console.SetOut(origOut);
                 Console.SetError(origErr);
             }
